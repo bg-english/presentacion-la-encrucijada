@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Encrucijada — De la IA a Goodhart</title>
+<!-- Fuentes web -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0B0E1A;
+    --panel: rgba(20, 26, 46, 0.70);
+    --panel-light: rgba(29, 36, 64, 0.8);
+    --coral: #FF6B4A;
+    --gold: #FFD166;
+    --paper: #F5F3EE;
+    --muted: #8891B3;
+    --line: rgba(42, 50, 83, 0.6);
+    --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+    --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  }
+  
+  * { box-sizing: border-box; }
+  html, body { 
+    margin: 0; padding: 0; height: 100%; 
+    background: var(--ink); color: var(--paper); 
+    font-family: var(--sans); overflow: hidden; 
+  }
+  
+  /* FONDO VIVO (AMBIENT GLOW) */
+  body::before, body::after {
+    content: ""; position: fixed; border-radius: 50%;
+    filter: blur(140px); opacity: 0.15; z-index: -1;
+    animation: float 18s infinite alternate ease-in-out;
+  }
+  body::before {
+    width: 60vw; height: 60vw; background: var(--coral);
+    top: -20vw; left: -20vw;
+  }
+  body::after {
+    width: 50vw; height: 50vw; background: var(--gold);
+    bottom: -15vw; right: -15vw; animation-delay: -5s;
+    animation-duration: 22s;
+  }
+  @keyframes float {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(8vw, 5vw) scale(1.1); }
+  }
+
+  .deck { position: relative; width: 100vw; height: 100vh; }
+  
+  /* TRANSICIÓN CINEMATOGRÁFICA Y ESPACIADO FLUIDO */
+  .slide { 
+    position: absolute; inset: 0; display: none; 
+    flex-direction: column; 
+    /* Padding dinámico: se achica en pantallas bajitas */
+    padding: clamp(2vh, 4vh, 5vh) 5vw; 
+    opacity: 0; transform: scale(0.96);
+    transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); 
+  }
+  .slide.active { display: flex; opacity: 1; transform: scale(1); }
+  .slide.center { justify-content: center; align-items: center; text-align: center; }
+  
+  /* Animaciones escalonadas */
+  .slide.active > * {
+    animation: fadeInUp 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    opacity: 0; transform: translateY(25px);
+  }
+  .slide.active > *:nth-child(1) { animation-delay: 0.1s; }
+  .slide.active > *:nth-child(2) { animation-delay: 0.25s; }
+  .slide.active > *:nth-child(3) { animation-delay: 0.4s; }
+  .slide.active > *:nth-child(4) { animation-delay: 0.55s; }
+  .slide.active > *:nth-child(5) { animation-delay: 0.7s; }
+
+  @keyframes fadeInUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Tipografía fluida (adapta su tamaño al viewport) */
+  .eyebrow { font-size: clamp(11px, 1vw, 13.5px); letter-spacing: .2em; color: var(--gold); margin-bottom: clamp(10px, 2vh, 18px); text-transform: uppercase; font-weight: 600; text-shadow: 0 0 20px rgba(255,209,102,0.3); }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(28px, 4.2vw, 58px); line-height: 1.15; margin: 0 0 clamp(10px, 2vh, 18px); text-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+  h1.mega { font-size: clamp(28px, 5vw, 70px); line-height: 1.05; }
+  p.lede { font-size: clamp(15px, 1.4vw, 22px); color: #D8DBEA; max-width: 740px; line-height: 1.5; margin: 0 auto; font-weight: 300; }
+  .accent { color: var(--coral); }
+  .gold { color: var(--gold); }
+
+  /* Slide 1: crossroads */
+  #s1 { position: relative; overflow: hidden; justify-content: center; align-items: flex-start; }
+  .sky { position: absolute; inset: 0; background: linear-gradient(180deg, #2A1F3D 0%, #4A2E3A 35%, #8C4A3A 60%, #C97A4A 100%); z-index: 0; }
+  .sun { position: absolute; width: clamp(100px, 15vh, 140px); height: clamp(100px, 15vh, 140px); border-radius: 50%; background: radial-gradient(circle, #FFD9A0, #FF9E5E 70%); top: 32%; left: 50%; transform: translateX(-50%); filter: blur(2px); box-shadow: 0 0 100px 40px rgba(255,158,94,.5); z-index: 1; animation: pulseSun 4s infinite alternate; }
+  @keyframes pulseSun { 0% { box-shadow: 0 0 80px 30px rgba(255,158,94,.4); } 100% { box-shadow: 0 0 120px 50px rgba(255,158,94,.6); } }
+  .dune { position: absolute; bottom: 0; left: 0; right: 0; height: 42%; background: #2A1B14; clip-path: polygon(0 60%, 20% 40%, 45% 55%, 65% 30%, 100% 50%, 100% 100%, 0 100%); z-index: 2; }
+  .road { position: absolute; bottom: 0; left: 50%; width: 0; height: 0; border-left: 10vw solid transparent; border-right: 10vw solid transparent; border-bottom: 46vh solid #1A100C; transform: translateX(-50%); z-index: 3; }
+  .road::after { content: ""; position: absolute; bottom: 0; left: -1px; right: -1px; height: 100%; background: repeating-linear-gradient(180deg, transparent 0 26px, rgba(255,214,166,.2) 26px 34px); clip-path: inherit; }
+  #s1 .content { position: relative; z-index: 4; padding-top: 2vh; }
+  
+  .hint { position: fixed; bottom: clamp(10px, 3vh, 5vh); left: 8vw; font-size: 13px; color: var(--muted); z-index: 30; opacity: 0.7; }
+  .hint kbd { background: var(--panel-light); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-family: monospace; box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+
+  /* Glassmorfismo */
+  .quote-mini, .tl-detail, .move-card, .flip-face {
+    background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25); border-radius: 16px;
+  }
+
+  .quote-mini { padding: clamp(20px, 4vh, 32px) clamp(24px, 4vw, 36px); margin-top: clamp(16px, 3vh, 26px); border-left: 5px solid var(--coral); max-width: 760px; }
+  .quote-mini p { font-family: var(--serif); font-style: italic; font-size: clamp(16px, 1.6vw, 20px); margin: 0; line-height: 1.5; color: #E2E4F0; }
+
+  /* Fondo tipográfico MIT */
+  #s2 { position: relative; z-index: 1; }
+  .mit-bg {
+    position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%);
+    font-family: var(--serif); font-size: clamp(150px, 35vw, 500px); font-weight: 700; line-height: 1; letter-spacing: -0.05em;
+    background: linear-gradient(135deg, rgba(255, 107, 74, 0.18) 0%, rgba(255, 209, 102, 0.05) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    z-index: -1; pointer-events: none; user-select: none;
+  }
+
+  /* Stats impactantes */
+  .stat-big { font-family: var(--serif); font-size: clamp(40px, 7vw, 100px); color: var(--gold); line-height: 1; margin: 0; text-shadow: 0 10px 40px rgba(255, 209, 102, 0.25); font-variant-numeric: tabular-nums; }
+  .stat-big.accent { color: var(--coral); text-shadow: 0 10px 40px rgba(255, 107, 74, 0.35); }
+  .stat-caption { font-size: clamp(15px, 1.4vw, 18px); color: #D8DBEA; margin-top: clamp(10px, 2vh, 20px); max-width: 600px; line-height: 1.5; }
+
+  /* Gráfico PISA completo animado */
+  #s3 { justify-content: flex-start; }
+  .pisa-main {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: clamp(16px, 3vw, 32px);
+    align-items: start;
+    width: 100%;
+    flex: 1;
+  }
+  .pisa-left-col {
+    text-align: left;
+  }
+  .pisa-left-col .stat-big {
+    font-size: clamp(55px, 10vw, 130px);
+    margin: 0;
+    line-height: 1;
+  }
+  .pisa-left-text {
+    font-size: clamp(12px, 1.2vw, 15px);
+    color: #D8DBEA;
+    line-height: 1.4;
+    margin-top: clamp(8px, 1.5vh, 14px);
+    text-align: justify;
+  }
+  .pisa-right-col {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .pisa-above-text {
+    font-size: clamp(12px, 1.2vw, 15px);
+    color: #D8DBEA;
+    line-height: 1.4;
+    margin: 0 0 clamp(8px, 1.5vh, 14px) 0;
+  }
+  .pisa-full-svg { width: 100%; height: auto; }
+  .pisa-legend-row {
+    display: flex;
+    align-items: center;
+    gap: clamp(20px, 3vw, 36px);
+    margin-top: clamp(10px, 2vh, 18px);
+    flex-wrap: wrap;
+  }
+  .pisa-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: clamp(13px, 1.4vw, 17px);
+    color: var(--paper);
+    font-weight: 600;
+  }
+  .pisa-legend-color {
+    width: 18px;
+    height: 4px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .pisa-legend-source {
+    margin-left: auto;
+    font-size: clamp(11px, 1vw, 13px);
+    color: var(--muted);
+    font-style: italic;
+  }
+  .pisa-full-svg { width: 100%; height: auto; overflow: visible; }
+
+  .grid-line { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; stroke-dasharray: 4 6; }
+  
+  .pisa-axis-label { font-family: var(--sans); font-size: 11px; fill: var(--muted); text-anchor: middle; }
+  .pisa-legend { font-family: var(--sans); font-size: 12px; fill: var(--paper); font-weight: 600; }
+  .pisa-source { font-family: var(--sans); font-size: 10px; fill: var(--muted); font-style: italic; }
+
+  .pisa-line {
+    fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round;
+    stroke-dasharray: 1200; stroke-dashoffset: 1200;
+    filter: drop-shadow(0 3px 8px rgba(0,0,0,0.3));
+  }
+  .slide.active .pisa-line { animation: drawPisaLine 2s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+  .slide.active .ciencias { animation-delay: 0.3s; }
+  .slide.active .matematicas { animation-delay: 0.6s; }
+  .slide.active .lectura { animation-delay: 0.9s; }
+
+  .pisa-line.ciencias { stroke: #4A90D9; }
+  .pisa-line.matematicas { stroke: #E8772E; }
+  .pisa-line.lectura { stroke: #FFD166; }
+
+  @keyframes drawPisaLine { to { stroke-dashoffset: 0; } }
+
+  .pisa-dot { fill: transparent; stroke: none; opacity: 0; }
+  .slide.active .pisa-dot { animation: fadeInPisaDot 0.4s forwards; }
+  .slide.active .ciencias-dot { animation-delay: 1.8s; }
+  .slide.active .matematicas-dot { animation-delay: 2.1s; }
+  .slide.active .lectura-dot { animation-delay: 2.4s; }
+
+  .slide.active .pisa-dot-end { animation: pulsePisaDot 2.5s infinite alternate; }
+  .slide.active .ciencias-dot.pisa-dot-end { animation-delay: 2.5s; }
+  .slide.active .matematicas-dot.pisa-dot-end { animation-delay: 2.8s; }
+  .slide.active .lectura-dot.pisa-dot-end { animation-delay: 3.1s; }
+
+  @keyframes fadeInPisaDot { to { opacity: 1; } }
+  @keyframes pulsePisaDot {
+    0% { opacity: 1; filter: drop-shadow(0 0 4px currentColor); transform: scale(1); }
+    100% { opacity: 1; filter: drop-shadow(0 0 12px currentColor); transform: scale(1.5); }
+  }
+
+  .ciencias-dot { fill: #4A90D9; }
+  .matematicas-dot { fill: #E8772E; }
+  .lectura-dot { fill: #FFD166; }
+
+  /* Veredicto dramático */
+  #s5 { background: radial-gradient(circle at center, #3A150D 0%, #0B0E1A 100%); }
+  .verdict { font-family: var(--serif); font-size: clamp(28px, 5vw, 68px); line-height: 1.15; color: var(--coral); max-width: 900px; font-weight: bold; text-shadow: 0 0 30px rgba(255,107,74,0.3); letter-spacing: 0.02em; }
+  .verdict-note { margin-top: clamp(20px, 4vh, 34px); font-size: clamp(14px, 1.2vw, 16px); color: var(--muted); font-style: italic; }
+
+  .twist-line { font-family: var(--serif); font-size: clamp(24px, 4vw, 46px); color: var(--muted); margin: 0; font-style: italic; }
+  .twist-punch { font-family: var(--serif); font-size: clamp(42px, 8vw, 120px); color: var(--paper); margin: 16px 0 0; text-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+
+  /* Timeline fluido */
+  .timeline { display: flex; gap: 0; margin-top: clamp(20px, 4vh, 40px); align-items: flex-start; }
+  .tl-node { flex: 1; text-align: center; cursor: pointer; position: relative; padding: 0 4px; }
+  .tl-dot { width: clamp(18px, 2vw, 24px); height: clamp(18px, 2vw, 24px); border-radius: 50%; background: var(--panel-light); border: 3px solid var(--line); margin: 0 auto clamp(8px, 1.5vh, 12px); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+  .tl-node:hover .tl-dot { border-color: rgba(255, 107, 74, 0.5); transform: scale(1.1); }
+  .tl-node.active .tl-dot { background: var(--coral); border-color: var(--coral); transform: scale(1.4); box-shadow: 0 0 20px rgba(255, 107, 74, 0.5); }
+  .tl-line { position: absolute; top: clamp(9px, 1vw, 11px); left: -50%; width: 100%; height: 2px; background: var(--line); z-index: -1; }
+  .tl-node:first-child .tl-line { display: none; }
+  .tl-emoji { font-size: clamp(24px, 3vw, 36px); margin-bottom: clamp(6px, 1.5vh, 12px); filter: grayscale(50%); transition: all 0.3s; }
+  .tl-node.active .tl-emoji { filter: grayscale(0%); transform: translateY(-4px) scale(1.1); text-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+  .tl-label { font-size: clamp(11px, 1vw, 14px); font-weight: 600; color: var(--muted); line-height: 1.2; transition: color 0.3s; }
+  .tl-node.active .tl-label { color: var(--gold); }
+  
+  .tl-detail { margin-top: clamp(20px, 4vh, 45px); padding: clamp(20px, 4vh, 36px) clamp(24px, 4vw, 40px); min-height: clamp(90px, 14vh, 120px); transition: all 0.3s ease; }
+  .tl-detail p { margin: 0; font-size: clamp(14px, 1.4vw, 18px); color: #D8DBEA; line-height: 1.5; }
+  .tl-detail .tl-title { font-family: var(--serif); font-size: clamp(18px, 2vw, 24px); color: var(--gold); margin-bottom: clamp(8px, 1.5vh, 12px); font-weight: bold; }
+  .tl-footer { margin-top: clamp(14px, 2.5vh, 26px); font-size: clamp(12px, 1vw, 15px); font-style: italic; color: var(--coral); padding-top: clamp(12px, 2vh, 18px); border-top: 1px solid rgba(255, 107, 74, 0.2); }
+
+  .anchor-quote { font-family: var(--serif); font-size: clamp(22px, 3vw, 42px); line-height: 1.4; max-width: 860px; color: var(--paper); font-style: italic; }
+  .anchor-sub { margin-top: clamp(16px, 3vh, 28px); font-size: clamp(15px, 1.4vw, 18px); color: var(--gold); }
+
+  .law-badge { display: inline-flex; align-items: center; background: rgba(255, 209, 102, 0.1); border: 1px solid rgba(255, 209, 102, 0.4); border-radius: 999px; padding: clamp(6px, 1vh, 8px) clamp(16px, 2vw, 24px); font-size: clamp(11px, 1vw, 14px); font-weight: 600; color: var(--gold); margin-bottom: clamp(16px, 3vh, 24px); letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 0 15px rgba(255, 209, 102, 0.15); }
+
+  .diagnosis { font-family: var(--serif); font-size: clamp(28px, 5vw, 72px); line-height: 1.25; max-width: 960px; }
+
+  .hope-quote { font-family: var(--serif); font-style: italic; font-size: clamp(24px, 3.5vw, 44px); line-height: 1.4; max-width: 900px; color: var(--paper); }
+  .hope-sub { margin-top: clamp(20px, 4vh, 30px); font-size: clamp(15px, 1.4vw, 18px); color: #D8DBEA; max-width: 700px; line-height: 1.5; }
+
+  /* Bloqueo estricto de columnas para Landscape (Evita el overflow vertical) */
+  .move-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 2vw, 26px); margin-top: clamp(20px, 4vh, 40px); width: 100%; max-width: 1100px; }
+  .move-card { padding: clamp(16px, 3vh, 34px); text-align: left; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease; border-top: 2px solid transparent; }
+  .move-card:hover { transform: translateY(-10px); box-shadow: 0 20px 50px rgba(0,0,0,0.4); border-top: 2px solid var(--coral); }
+  .move-card .num { font-family: var(--serif); color: var(--coral); font-size: clamp(24px, 3vw, 38px); font-weight: bold; margin-bottom: clamp(8px, 1.5vh, 14px); }
+  .move-card h4 { margin: 0 0 clamp(6px, 1vh, 12px); font-size: clamp(15px, 1.5vw, 20px); color: var(--paper); }
+  .move-card p { margin: 0; font-size: clamp(12.5px, 1.2vw, 15.5px); color: #C7CBE0; line-height: 1.5; }
+  .closing-q { margin-top: clamp(24px, 5vh, 46px); font-family: var(--serif); font-style: italic; font-size: clamp(18px, 2vw, 24px); color: var(--gold); }
+
+  /* Bloqueo de 4 columnas para evitar que se desborde la pantalla */
+  .flip-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(8px, 1.2vw, 18px); margin-top: clamp(20px, 4vh, 36px); width: 100%; max-width: 1140px; }
+  .flip-card { perspective: 1000px; cursor: pointer; height: clamp(110px, 18vh, 180px); }
+  .flip-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+  .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+  .flip-front { background: var(--panel); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: clamp(10px, 1.5vw, 20px); }
+  .flip-front .num { font-family: var(--serif); color: var(--gold); font-size: clamp(18px, 2vw, 28px); opacity: 0.7; }
+  .flip-front .ttl { font-weight: 600; font-size: clamp(12px, 1.2vw, 17px); margin-top: clamp(4px, 1vh, 10px); color: var(--paper); }
+  .flip-front .emoji { font-size: clamp(20px, 2.5vw, 32px); margin-bottom: auto; }
+  .flip-back { background: linear-gradient(135deg, var(--coral), #E05335); color: #1A0D08; transform: rotateY(180deg); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: clamp(10px, 1.5vw, 20px); border: none; }
+  .flip-back .ttl { font-weight: 800; font-size: clamp(11px, 1vw, 15px); margin-bottom: clamp(4px, 1vh, 10px); text-transform: uppercase; letter-spacing: 0.05em; }
+  .flip-back p { margin: 0; font-size: clamp(10.5px, 1vw, 14px); line-height: 1.4; font-weight: 500; }
+  .flip-hint { grid-column: 1 / -1; font-size: clamp(11px, 1vw, 14px); color: var(--gold); margin-top: clamp(10px, 2vh, 20px); text-align: center; font-style: italic; opacity: 0.8; }
+
+  /* Nav chrome */
+  .nav-arrow { position: fixed; top: 0; bottom: 0; width: 10%; z-index: 20; cursor: pointer; display: flex; align-items: center; opacity: 0; transition: opacity 0.3s; }
+  .nav-arrow:hover { opacity: 1; }
+  .nav-arrow.left { left: 0; justify-content: flex-start; padding-left: 2vw; background: linear-gradient(90deg, rgba(11,14,26,0.8) 0%, transparent 100%); }
+  .nav-arrow.right { right: 0; justify-content: flex-end; padding-right: 2vw; background: linear-gradient(-90deg, rgba(11,14,26,0.8) 0%, transparent 100%); }
+  .nav-arrow span { font-size: 26px; color: var(--paper); background: rgba(255,255,255,.1); backdrop-filter: blur(4px); border-radius: 50%; width: clamp(40px, 4vw, 52px); height: clamp(40px, 4vw, 52px); display: flex; align-items: center; justify-content: center; transition: transform 0.2s, background 0.2s; }
+  .nav-arrow:hover span { background: rgba(255,255,255,.25); transform: scale(1.15); }
+  
+  .progress { position: fixed; bottom: clamp(14px, 3vh, 28px); left: 0; right: 0; display: flex; justify-content: center; gap: 8px; z-index: 20; }
+  .progress .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2); cursor: pointer; transition: all 0.3s ease; }
+  .progress .dot:hover { background: rgba(255,255,255,0.6); transform: scale(1.2); }
+  .progress .dot.active { background: var(--coral); width: 24px; border-radius: 4px; box-shadow: 0 0 10px rgba(255,107,74,0.6); }
+  .counter { position: fixed; top: clamp(14px, 3vh, 28px); right: clamp(20px, 3vw, 36px); font-size: clamp(11px, 1.2vw, 14px); font-weight: 600; color: var(--muted); z-index: 20; letter-spacing: 0.15em; }
+
+  /* Media Queries para laptops y pantallas pequeñas */
+  @media (max-width: 1400px) or (max-height: 800px) {
+    .pisa-main { grid-template-columns: 180px 1fr; gap: 20px; }
+    .pisa-left-col .stat-big { font-size: clamp(48px, 8vw, 100px); }
+  }
+  @media (max-width: 1100px) or (max-height: 720px) {
+    .slide { padding: 3vh 4vw; }
+    .quote-mini { padding: 14px 20px; margin-top: 10px; }
+    .tl-detail { padding: 14px 20px; min-height: 70px; }
+    .pisa-main { grid-template-columns: 1fr; gap: 12px; }
+    .pisa-left-col { text-align: center; }
+    .pisa-left-col .stat-big { font-size: clamp(40px, 10vw, 70px); }
+    .pisa-left-text { text-align: center; }
+    .eyebrow { font-size: 11px; margin-bottom: 8px; }
+    h1 { font-size: clamp(18px, 3vw, 32px); margin-bottom: 10px; }
+    .lede { font-size: clamp(13px, 1.3vw, 16px); }
+  }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- 1: PREGUNTA DE APERTURA -->
+  <section class="slide center active" id="sOpen">
+    <p class="hope-quote">"¿Cuándo fue la última vez que revisaron un trabajo y, en el fondo, no supieron si estaban evaluando al estudiante o a su chatbot?"</p>
+  </section>
+
+  <!-- 2: LA ENCRUCIJADA -->
+  <section class="slide" id="s1">
+    <div class="sky"></div><div class="sun"></div><div class="road"></div><div class="dune"></div>
+    <div class="content">
+      <h1 class="mega">Estamos parados<br>en una encrucijada.</h1>
+      <p class="lede">Y lo peor no es no saber qué camino tomar.<br>Es sospechar que da igual cuál elijamos.</p>
+    </div>
+  </section>
+
+  <!-- 3: NOMBRAR EL SENTIMIENTO -->
+  <section class="slide" id="s2">
+    <div class="mit-bg">MIT</div>
+    <div class="eyebrow">No estás solo en esto</div>
+    <h1>Del entusiasmo al "me rehúso a usarla" —<br>y todo en el mismo salón de profesores.</h1>
+    <p class="lede" style="margin-left:0;">Así lo describe hasta el MIT: instructores que van de la exploración entusiasta a la sospecha, al escepticismo abierto, al rechazo total de la IA. Y en medio, un deseo compartido de simplemente hablarlo con alguien más.</p>
+    <div class="quote-mini"><p>No es un problema de actitud. Es terreno movedizo bajo los pies de todos — incluso en el MIT.</p></div>
+  </section>
+
+  <!-- 4: DATO DURO 1 (Gráfico PISA Animado) -->
+  <section class="slide" id="s3">
+    <div class="eyebrow">Los datos, primero</div>
+    
+    <div class="pisa-main">
+      <div class="pisa-left-col">
+        <p class="stat-big count-up" data-target="466">0</p>
+        <p class="pisa-left-text">Puntaje promedio en lectura — el más bajo desde que existe la prueba.</p>
+      </div>
+      
+      <div class="pisa-right-col">
+        <p class="pisa-above-text">PISA mide a los quinceañeros del mundo entero. Desde 2012, las tres áreas caen sin freno. Matemáticas y lectura, en la misma caída histórica.</p>
+        
+        <svg viewBox="0 0 560 230" class="pisa-full-svg" id="pisaChart">
+          <line x1="40" y1="15" x2="540" y2="15" class="grid-line"/>
+          <line x1="40" y1="60" x2="540" y2="60" class="grid-line"/>
+          <line x1="40" y1="105" x2="540" y2="105" class="grid-line"/>
+          <line x1="40" y1="150" x2="540" y2="150" class="grid-line"/>
+          <line x1="40" y1="195" x2="540" y2="195" class="grid-line"/>
+          
+          <text x="35" y="19" class="pisa-axis-label">510</text>
+          <text x="35" y="64" class="pisa-axis-label">500</text>
+          <text x="35" y="109" class="pisa-axis-label">490</text>
+          <text x="35" y="154" class="pisa-axis-label">480</text>
+          <text x="35" y="199" class="pisa-axis-label">470</text>
+          
+          <text x="50" y="218" class="pisa-axis-label">2000</text>
+          <text x="170" y="218" class="pisa-axis-label">2006</text>
+          <text x="290" y="218" class="pisa-axis-label">2012</text>
+          <text x="410" y="218" class="pisa-axis-label">2018</text>
+          <text x="520" y="218" class="pisa-axis-label">2025</text>
+          
+          <polyline class="pisa-line ciencias" points="50,60 130,56 210,50 290,45 370,40 450,50 530,62"/>
+          <polyline class="pisa-line matematicas" points="50,60 130,58 210,64 290,60 370,55 450,60 530,75"/>
+          <polyline class="pisa-line lectura" points="50,60 130,58 210,62 290,58 370,55 450,66 530,90"/>
+          
+          <circle cx="50" cy="60" r="5" class="pisa-dot ciencias-dot"/>
+          <circle cx="530" cy="62" r="6" class="pisa-dot ciencias-dot pisa-dot-end"/>
+          <circle cx="50" cy="60" r="5" class="pisa-dot matematicas-dot"/>
+          <circle cx="530" cy="75" r="6" class="pisa-dot matematicas-dot pisa-dot-end"/>
+          <circle cx="50" cy="60" r="5" class="pisa-dot lectura-dot"/>
+          <circle cx="530" cy="90" r="6" class="pisa-dot lectura-dot pisa-dot-end"/>
+        </svg>
+        
+        <div class="pisa-legend-row">
+          <span class="pisa-legend-item"><span class="pisa-legend-color" style="background:#4A90D9"></span>Ciencias</span>
+          <span class="pisa-legend-item"><span class="pisa-legend-color" style="background:#E8772E"></span>Matemáticas</span>
+          <span class="pisa-legend-item"><span class="pisa-legend-color" style="background:#FFD166"></span>Lectura</span>
+          <span class="pisa-legend-source">Fuente: OCDE</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5: DATO DURO 2 -->
+  <section class="slide center" id="s4">
+    <div class="eyebrow">La pistola humeante</div>
+    <p class="stat-big accent count-up" data-target="-20">0</p>
+    <p class="stat-caption">Puntos menos en ciencias para los estudiantes que usan IA para redactar, resumir o investigar, frente a quienes no la usan.</p>
+    <p class="stat-caption" style="font-style:italic; color:var(--gold); margin-top:clamp(10px, 2vh, 22px);">Ahí está. Ya tenemos culpable.</p>
+    <p class="stat-caption" style="font-size:clamp(11px, 1.1vw, 13.5px); color:var(--muted); margin-top:clamp(6px, 1.5vh, 12px);"> (O eso creemos. Ni siquiera sabemos si la IA los debilitó — o si los que ya iban más débiles fueron quienes más la necesitaron.)</p>
+  </section>
+
+  <!-- 6: EL VEREDICTO -->
+  <section class="slide center" id="s5">
+    <p class="verdict">"LA INTELIGENCIA ARTIFICIAL<br>ESTÁ DESTRUYENDO A NUESTROS ESTUDIANTES."</p>
+    <p class="verdict-note">(Así se sentiría terminar esta charla. No vamos a terminar aquí.)</p>
+  </section>
+
+  <!-- 7: LA GRIETA -->
+  <section class="slide" id="s6">
+    <div class="eyebrow">Pero hay algo que no cuadra</div>
+    <h1>PISA 2022 ya mostraba el peor<br>desplome de su historia.</h1>
+    <p class="lede" style="margin-left:0;">ChatGPT salió al público el 30 de noviembre de 2022. Casi nadie lo usaba todavía cuando esa prueba se aplicó.</p>
+    <div class="quote-mini"><p>El declive empezó antes de que la IA generativa existiera siquiera.</p></div>
+    <p class="lede" style="margin-left:0; margin-top:clamp(10px, 2vh, 20px); font-size:clamp(12px, 1.2vw, 14.5px); color:var(--muted); font-style:italic;">(Y no es la única causa — escasez de profesores, pantallas, menos acompañamiento en casa. Es la que nos toca resolver a nosotros.)</p>
+  </section>
+
+  <!-- 8: EL GIRO -->
+  <section class="slide center" id="s7">
+    <p class="twist-line">Todo empezó...</p>
+    <p class="twist-punch">con las computadoras.</p>
+  </section>
+
+  <!-- 9: LA GENEALOGÍA -->
+  <section class="slide" id="s8">
+    <div class="eyebrow">Treinta años quitando fricción, un paso a la vez</div>
+    <h1 style="font-size:clamp(22px, 3.2vw, 38px);">Cada tecnología te ahorró un poco más de esfuerzo.<br>Casi ninguna te lo ahorró todo. Hasta ahora.</h1>
+    <div class="timeline" id="timeline"></div>
+    <div class="tl-detail" id="tlDetail"></div>
+  </section>
+
+  <!-- 10: EL ANCLA PERSONAL -->
+  <section class="slide center" id="s9">
+    <div class="eyebrow">Una historia real, no una estadística</div>
+    <p class="anchor-quote">"En décimo grado leí la Ilíada en un resumen del resumen del resumen, de una editorial reconocida. Nunca la he leído. Mi papá sí."</p>
+    <p class="anchor-sub">Esa ventaja generacional ya existía. Simplemente todavía no se notaba.</p>
+  </section>
+
+  <!-- 11: LEY DE GOODHART -->
+  <section class="slide" id="s10">
+    <div class="law-badge">Ley de Goodhart</div>
+    <h1>"Cuando una medida se vuelve objetivo,<br>deja de ser una buena medida."</h1>
+    <p class="lede" style="margin-left:0;">Las computadoras entraron al aula y a la calificación exigiendo algo que una máquina pudiera calificar: opción múltiple, respuesta cerrada, la idealidad en vez de la aplicación real. Empezamos a medir la respuesta esperada — no el conocimiento.</p>
+    <div class="quote-mini"><p>La IA no inventó el problema. Lo hizo imposible de seguir ignorando.</p></div>
+  </section>
+
+  <!-- 12: EL DIAGNÓSTICO REAL -->
+  <section class="slide center" id="s11">
+    <p class="diagnosis">El problema nunca fue<br>la máquina.<br><span class="gold">Fue lo que decidimos medir.</span></p>
+  </section>
+
+  <!-- 13: INTERNET Y COPY-PASTE -->
+  <section class="slide center" id="sA1">
+    <div class="eyebrow">Y seguimos bajando la cuesta</div>
+    <p class="twist-line">Y entonces llegó Internet.</p>
+    <p class="twist-punch">Copiar y pegar.<br><span class="accent">¿Les suena?</span></p>
+  </section>
+
+  <!-- 14: LA INERCIA + EL ESPEJO -->
+  <section class="slide" id="sA2">
+    <div class="eyebrow">Lo que de verdad sorprende</div>
+    <h1>No es que hoy pensemos<br>que los alumnos no estudian.</h1>
+    <p class="lede" style="margin-left:0;">Es que, arrinconado contra las cuerdas durante treinta años, el sistema de recompensa y esfuerzo casi no ha cambiado.</p>
+    <div class="quote-mini"><p>Y, más cínicamente: nuestros alumnos no son peores que nosotros. Solo hacen lo mismo que hicimos al descubrir que ya no había que leer para conseguir — solo que ellos ya ni siquiera necesitan pensar para hallar.</p></div>
+  </section>
+
+  <!-- 15: CONFESIÓN PERSONAL -->
+  <section class="slide center" id="sA3">
+    <div class="eyebrow">Una confesión, no una estadística</div>
+    <p class="anchor-quote">"Me he descubierto teniendo charlas más amenas y productivas con una IA que con mis amigos, mi esposa o mis hijos. Y no es porque no podamos producir más juntos — es que dejamos de experimentar el amor por saber, por el amor por tener."</p>
+    <p class="anchor-sub">Tener no es lo mismo que aprovechar. Ni que saborear.</p>
+    <p class="anchor-sub" style="font-size:clamp(11px, 1.1vw, 14px); color:var(--muted); margin-top:clamp(10px, 2vh, 16px);"> (Y no se los cuento desde el podio. Me incluyo en el diagnóstico — no lo señalo desde afuera.)</p>
+  </section>
+
+  <!-- 16: EL EJEMPLO QUE DUELE -->
+  <section class="slide center" id="sA4">
+    <div class="eyebrow">El espejo, otra vez</div>
+    <h1 style="font-size:clamp(22px, 3.5vw, 44px); max-width:880px;">Cuando un adulto le dice a un niño "no aprendí matemáticas porque me eran difíciles, por eso elegí lenguaje" —</h1>
+    <p class="lede">¿con qué autoridad moral le exige después que a él sí le guste lo difícil?</p>
+  </section>
+
+  <!-- 17: RENDICIÓN COGNITIVA (MIT) -->
+  <section class="slide" id="sA5">
+    <div class="law-badge">Lo que dice el MIT: "cognitive surrender"</div>
+    <h1>La rendición cognitiva de nuestros hijos<br>es más débil que la nuestra.</h1>
+    <p class="lede" style="margin-left:0;">No por debilidad de carácter — porque la respuesta está más al alcance que nunca. El niño hace lo sencillo.</p>
+    <div class="quote-mini"><p>Y eso, en sí mismo, no es criticable.</p></div>
+  </section>
+
+  <!-- 18: CAMBIAR LA DINÁMICA + PRECEDENTE -->
+  <section class="slide" id="sA6">
+    <div class="eyebrow">Entonces, ¿qué hacemos?</div>
+    <h1>¿Quitamos la IA? No.<br>Cambiamos cómo se usa dentro del aula.</h1>
+    <p class="lede" style="margin-left:0;">Esto ya nos pasó antes. Escribir a mano dejó de ser "necesario" cuando la impresora lo hacía más limpio. Resultado: la letra de nuestros niños hoy es ilegible. Aceptamos ese costo sin pelear.</p>
+    <div class="quote-mini"><p>Este cambio nos va a costar más si lo ignoramos igual.</p></div>
+  </section>
+
+  <!-- 19: LA ESPERANZA -->
+  <section class="slide center" id="s12">
+    <div class="eyebrow">Y aquí está lo esperanzador</div>
+    <p class="hope-quote">"No hay forma de seguir usando la IA y esperar alumnos capaces. O la usamos para mejorar seres humanos, o ella mejorará hasta desbancarlos."</p>
+    <p class="hope-sub">Y esto no se decide una vez. Se decide en cada evaluación que diseñamos — cada semana.</p>
+  </section>
+
+  <!-- 20: SER HUMILDE (CIERRE, CALLBACK) -->
+  <section class="slide center" id="sA7">
+    <div class="eyebrow">Y así, sin más, llegamos al principio</div>
+    <p class="diagnosis" style="font-size:clamp(24px, 3.5vw, 50px);">El reporte del MIT no es más<br>que el resultado de una cadena lógica de sucesos.</p>
+    <p class="hope-sub" style="margin-top:clamp(16px, 3vh, 28px);">Y quienes finalmente decidieron actuar, empezaron por lo más simple de todos sus principios:<br><span class="gold" style="font-style:italic; font-size: 1.2em; display: inline-block; margin-top: clamp(6px, 1.5vh, 10px);">ser humildes.</span></p>
+  </section>
+
+  <!-- 21: PUENTE A CBF -->
+  <section class="slide center" id="s13">
+    <div class="eyebrow">¿Y ahora qué hacemos en CBF?</div>
+    <h1 style="font-size:clamp(22px, 3vw, 36px);">Tres movidas, no un memo de una vez</h1>
+    <div class="move-grid">
+      <div class="move-card"><div class="num">01</div><h4>Rediseñar qué evaluamos</h4><p>No solo vigilar más. Cambiar qué le pedimos al estudiante que produzca.</p></div>
+      <div class="move-card"><div class="num">02</div><h4>Política de IA, materia por materia</h4><p>Clara, justificada, explicada — no un silencio ni una prohibición genérica.</p></div>
+      <div class="move-card"><div class="num">03</div><h4>Proteger el espacio social</h4><p>Mentoría, discusión en vivo, el aula como comunidad — no solo como entrega de tareas.</p></div>
+    </div>
+    <p class="closing-q">¿Con cuál de las tres empezamos nosotros?</p>
+  </section>
+
+  <!-- 22: LOS PILARES DEL MIT (RECAP) -->
+  <section class="slide center" id="sPillars">
+    <div class="eyebrow">Con esto en la mano, el MIT decidió actuar</div>
+    <h1 style="font-size:clamp(20px, 2.8vw, 34px);">Ocho principios. Ninguno dice "prohibir".</h1>
+    <div class="flip-grid" id="flipGrid"></div>
+    <p class="flip-hint">Clic en cada tarjeta para voltearla.</p>
+  </section>
+
+  <!-- 23: PREGUNTA FINAL -->
+  <section class="slide center" id="sFinal">
+    <p class="twist-line">Si los pioneros del saber<br>se dieron cuenta del error...</p>
+    <p class="twist-punch">¿no será hora<br>de darnos cuenta nosotros?</p>
+  </section>
+
+</div>
+
+<!-- Controles -->
+<div class="nav-arrow left" id="navLeft"><span>&#8592;</span></div>
+<div class="nav-arrow right" id="navRight"><span>&#8594;</span></div>
+<div class="progress" id="progress"></div>
+<div class="counter" id="counter">1 / 23</div>
+<div class="hint">Usa <kbd>&#8594;</kbd> o clic para avanzar</div>
+
+<script>
+// Datos Timeline
+const tlSteps = [
+  {emoji:"📚", label:"El libro", title:"El libro", text:"Costaba. Una enciclopedia completa podía costar miles de dólares."},
+  {emoji:"📖", label:"La enciclopedia", title:"La enciclopedia", text:"Cara, pero completa. Al menos había que cargarla, abrirla, buscar en ella."},
+  {emoji:"💿", label:"Encarta", title:"Encarta", text:"El conocimiento a un clic. Aún tenías que buscar y leer algo antes de escribir la monografía."},
+  {emoji:"📄", label:"El resumen³", title:"El resumen del resumen del resumen", text:"Ya ni buscabas. Alguien más ya lo había masticado por ti — pero todavía tenías que leerlo y transcribirlo."},
+  {emoji:"🤖", label:"La IA generativa", title:"La IA generativa", text:"Ni siquiera lees el resumen. Lo produces bajo demanda, y lo entregas."}
+];
+
+// Datos Tarjetas MIT
+const principles = [
+  {emoji:"🌫️", title:"Be Humble", back:"Habrá correcciones de rumbo. Ni el MIT dice tenerlo todo resuelto."},
+  {emoji:"⚡", title:"Be Bold", back:"La incertidumbre no es excusa para no actuar."},
+  {emoji:"❤️", title:"Humanity First", back:"Proteger a la comunidad, por encima de la pura eficiencia."},
+  {emoji:"🧗", title:"Lean Into Learning", back:"La lucha productiva es el punto — no un obstáculo a eliminar."},
+  {emoji:"🎯", title:"Teach with Intent", back:"Rediseñar desde el objetivo, no reaccionar a lo que la IA ya puede hacer."},
+  {emoji:"🎭", title:"No One Size Fits All", back:"Una clase de arte y una de cálculo no necesitan la misma regla."},
+  {emoji:"🤖", title:"Augment, Not Automate", back:"Que la IA amplíe el pensar, no que lo reemplace."},
+  {emoji:"🌍", title:"Beyond the Classroom", back:"La educación forma identidad y juicio — algo que un chat no reemplaza."}
+];
+
+// Renderizar Tarjetas
+const flipGrid = document.getElementById("flipGrid");
+principles.forEach((p,i)=>{
+  const card = document.createElement("div");
+  card.className = "flip-card";
+  card.innerHTML = `
+    <div class="flip-inner">
+      <div class="flip-face flip-front">
+        <div class="emoji">${p.emoji}</div>
+        <div class="num">0${i+1}</div>
+        <div class="ttl">${p.title}</div>
+      </div>
+      <div class="flip-face flip-back">
+        <div class="ttl">${p.title}</div>
+        <p>${p.back}</p>
+      </div>
+    </div>`;
+  card.addEventListener("click", ()=> card.classList.toggle("flipped"));
+  flipGrid.appendChild(card);
+});
+
+// Renderizar Timeline
+const timeline = document.getElementById("timeline");
+const tlDetail = document.getElementById("tlDetail");
+let tlActive = 0;
+
+function renderTlDetail(i){
+  const s = tlSteps[i];
+  tlDetail.innerHTML = `<div class="tl-title">${s.title}</div><p>${s.text}</p>` +
+    (i === tlSteps.length-1 ? `<div class="tl-footer">En cada paso anterior, siempre sobrevivía un residuo mínimo de trabajo propio. Aquí, por primera vez, ese residuo puede llegar a cero.</div>` : "");
+}
+
+tlSteps.forEach((s,i)=>{
+  const node = document.createElement("div");
+  node.className = "tl-node" + (i===0 ? " active":"");
+  node.innerHTML = `<div class="tl-line"></div><div class="tl-dot"></div><div class="tl-emoji">${s.emoji}</div><div class="tl-label">${s.label}</div>`;
+  node.addEventListener("click", ()=>{
+    document.querySelectorAll(".tl-node").forEach(n=>n.classList.remove("active"));
+    node.classList.add("active");
+    tlActive = i;
+    renderTlDetail(i);
+  });
+  timeline.appendChild(node);
+});
+renderTlDetail(0);
+
+// LÓGICA DE ANIMACIÓN DE NÚMEROS
+function animateCounters(slide) {
+  const counters = slide.querySelectorAll('.count-up');
+  counters.forEach(counter => {
+    const target = parseInt(counter.getAttribute('data-target'));
+    const duration = 1500; 
+    const isNegative = target < 0;
+    const absTarget = Math.abs(target);
+    
+    counter.innerText = '0'; 
+    
+    let start = null;
+    function step(timestamp) {
+      if (!start) start = timestamp;
+      const progress = Math.min((timestamp - start) / duration, 1);
+      const easeProgress = 1 - Math.pow(1 - progress, 4);
+      let currentVal = Math.floor(easeProgress * absTarget);
+      
+      counter.innerText = (isNegative ? '-' : '') + currentVal;
+      
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      } else {
+        counter.innerText = (isNegative ? '-' : '') + absTarget;
+      }
+    }
+    setTimeout(() => { window.requestAnimationFrame(step); }, 500);
+  });
+}
+
+// NAVEGACIÓN
+const slides = Array.from(document.querySelectorAll(".slide"));
+let current = 0;
+const progress = document.getElementById("progress");
+
+slides.forEach((s,i)=>{
+  const dot = document.createElement("div");
+  dot.className = "dot" + (i===0 ? " active":"");
+  dot.addEventListener("click", ()=> goTo(i));
+  progress.appendChild(dot);
+});
+const counter = document.getElementById("counter");
+
+function goTo(i){
+  if(i<0 || i>=slides.length) return;
+  slides[current].classList.remove("active");
+  current = i;
+  slides[current].classList.add("active");
+  document.querySelectorAll(".progress .dot").forEach((d,idx)=> d.classList.toggle("active", idx===current));
+  counter.textContent = (current+1)+" / "+slides.length;
+  
+  animateCounters(slides[current]);
+}
+
+function next(){ goTo(current+1); }
+function prev(){ goTo(current-1); }
+
+document.getElementById("navRight").addEventListener("click", next);
+document.getElementById("navLeft").addEventListener("click", prev);
+document.addEventListener("keydown", (e)=>{
+  if(e.key==="ArrowRight" || e.key===" ") next();
+  if(e.key==="ArrowLeft") prev();
+});
+</script>
+</body>
+</html>
